@@ -27,7 +27,7 @@
 <div class="field"><label for="actSelect">练哪一部分？</label><select id="actSelect"></select></div>
 <div class="gridstats"><div class="stat"><strong id="statTotal">0</strong><small>本场接口</small></div><div class="stat"><strong id="statYes">0</strong><small>已经会</small></div><div class="stat"><strong id="statNo">0</strong><small>仍不会</small></div></div>
 <div class="progress"><i id="progressFill"></i></div>
-<div class="sectionbuttons"><button class="button" id="allMode">按顺序练</button><button class="button secondary" id="wrongMode">只练不会的</button><button class="button secondary" id="randomMode">随机抽查</button></div>
+<div class="sectionbuttons"><button class="button" id="allMode">按顺序练</button><button class="button secondary" id="wrongMode">只练不会的</button><button class="button secondary" id="randomMode">随机抽查</button><button class="button secondary" id="combinedMode">综合练习 · 谁接我的话</button></div>
 <div class="sep"></div><div class="field"><label for="searchCue">检索台词 / 接口</label><input id="searchCue" placeholder="例如：皮带 / 爸爸" autocomplete="off"></div>
 <div class="notice">多人合说（如“甲乙”“警察们”“齐”）会自动归入对应角色。“齐”的实际参与者请先在「合说校对」中确认。</div>
 <div class="row" style="margin-top:12px"><button class="button secondary tiny" id="resetGrade">清空本角色成绩</button><button class="button secondary tiny" id="exportGrade">导出成绩</button></div>
@@ -16020,15 +16020,16 @@ function mnemonic(d){
 }
 function statRender(){let s=rank();$('statTotal').textContent=s.total;$('statYes').textContent=s.yes;$('statNo').textContent=s.no;$('progressFill').style.width=(s.total?s.done/s.total*100:0)+'%';$('docMark').textContent=`${play.lines.length} 处台词接口 · ${play.source}`;$('wrongMode').disabled=s.no===0;}
 function makeQueue(which='all'){
- mode=which; const matches=byCurrentRole().filter(d=> !query || [d.text,d.prev?.text,d.next?.text,d.original_label,d.part].some(x=>(x||'').includes(query)));
+ combined=false; mode=which; const matches=byCurrentRole().filter(d=> !query || [d.text,d.prev?.text,d.next?.text,d.original_label,d.part].some(x=>(x||'').includes(query)));
  if(which==='wrong') queue=matches.filter(d=>grades[role+':'+d.id]==='no').map(x=>x.id);
  else queue=matches.map(x=>x.id);
  if(which==='random')for(let i=queue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[queue[i],queue[j]]=[queue[j],queue[i]];}
  pos=0;answerVisible=false;wantsNext=false;hintVisible=false;fullCueVisible=false;
  practiceView='quiz'; renderPractice();
 }
-function renderNavButtons(){for(let [id,m] of [['allMode','all'],['wrongMode','wrong'],['randomMode','random']])$(id).className='button '+(mode===m?'':'secondary');}
+function renderNavButtons(){ $('combinedMode').className='button '+(combined?'':'secondary');for(let [id,m] of [['allMode','all'],['wrongMode','wrong'],['randomMode','random']])$(id).className='button '+(mode===m?'':'secondary');}
 function renderPractice(){
+ if(combined){renderCombined();return;}
  selectedTab='practice';$('importView').classList.add('hidden');$('workspace').classList.remove('hidden');$('reviewView').classList.add('hidden');$('manageView').classList.add('hidden');$('pageTitle').textContent='专属于演员的接口记忆器';$('pageSubtitle').textContent='上一句 → 我的台词 → 下一句 · 只需点击会 / 不会';
  statRender(); renderNavButtons();
  const main=$('mainPractice');
@@ -16108,7 +16109,64 @@ function exportSite(){
  let node=doc.querySelector('#mainPractice');if(node)node.innerHTML='';
  downloadText('index.html','<!doctype html>\n'+doc.outerHTML,'text/html;charset=utf-8');
 }
-function persistSelector(){writeStore(':role',role);writeStore(':part',act);query='';$('searchCue').value='';makeQueue('all');}
+function persistSelector(){writeStore(':role',role);writeStore(':part',act);query='';$('searchCue').value='';if(combined)startCombined();else makeQueue('all');}
+
+// 综合练习沿用原题库与个人背词成绩，仅考查自己台词后的说话人。
+let combined=false, sceneLines=[], scenePos=0, scenePhase='recall', sceneAnswer=false, sceneHint=false, speakerChoice=null;
+function startCombined(){
+ combined=true; sceneLines=play.lines.filter(takeAct); scenePos=sceneLines.findIndex(d=>lineRoles(d).includes(role));
+ scenePhase='recall';sceneAnswer=false;sceneHint=false;speakerChoice=null;renderPractice();
+}
+function sceneMove(i){scenePos=i;sceneAnswer=false;sceneHint=false;speakerChoice=null;scenePhase=i>=0&&sceneLines[i]&&lineRoles(sceneLines[i]).includes(role)?'recall':'read';renderPractice();}
+function sceneJump(){const i=sceneLines.findIndex((d,j)=>j>scenePos&&lineRoles(d).includes(role));sceneMove(i<0?sceneLines.length:i);}
+function speakerKey(d){return lineUncertain(d)?'label:'+d.original_label:'roles:'+lineRoles(d).slice().sort().join('|');}
+function speakerLabel(d){return lineUncertain(d)?d.original_label+'（原稿称呼，分配待确认）':lineRoles(d).map(castName).join(' + ')||d.original_label;}
+function contextCard(d){return `<div class="record"><strong>${esc(speakerLabel(d))}</strong><div class="fulltext">${esc(d.text)}</div>${stageTitle(d)}</div>`;}
+function sceneContext(end){
+ const part=sceneLines[scenePos]?.part;const past=sceneLines.slice(0,end).filter(d=>d.part===part);
+ return `<div class="memorize"><strong>前情 · 最近三句</strong>${past.length?past.slice(-3).map(contextCard).join(''):'<p class="fine">本部分开场，没有更早的台词。</p>'}${past.length>3?`<details class="more"><summary>展开本部分更早的对话与舞台提示</summary>${past.slice(0,-3).map(contextCard).join('')}</details>`:''}</div>`;
+}
+function renderCombined(){
+ selectedTab='practice';$('importView').classList.add('hidden');$('workspace').classList.remove('hidden');$('reviewView').classList.add('hidden');$('manageView').classList.add('hidden');
+ $('pageTitle').textContent='综合练习 · 接住话，也递出话';$('pageSubtitle').textContent='背我的台词 → 谁接我的话 → 顺着剧情读下去';statRender();renderNavButtons();
+ for(const id of ['allMode','wrongMode','randomMode'])$(id).className='button secondary';
+ const main=$('mainPractice'),d=sceneLines[scenePos];
+ if(!d){main.innerHTML=`<div class="empty"><h2>${scenePos<0?'所选范围没有你的台词':'这一轮读完了'}</h2><p>自己的台词练记忆，中间的对话理解剧情，不逐句考其他角色。</p><button class="button" id="sceneRestart">重新综合练习</button></div>`;$('sceneRestart').onclick=startCombined;return;}
+ const next=sceneLines[scenePos+1],samePart=next&&next.part===d.part;
+ const bind=(id,fn)=>{if($(id))$(id).onclick=fn;};
+ let body=`<div class="eyebrow"><span>${esc(d.part)} · 原文 #${d.id}</span><span class="pill">${scenePhase==='recall'?'我的台词':scenePhase==='speaker'?'谁接话':'读剧情'}</span></div>`;
+ body+=sceneContext(scenePos);
+ if(scenePhase==='recall'){
+ body+=stageTitle(d)+`<div class="cue"><span class="cue-label">轮到你 · ${esc(speakerLabel(d))}</span>${sceneAnswer?`<div class="fulltext cue-text">${esc(d.text)}</div>`:'<div class="tip">结合前情，先完整说出你的台词。</div>'}</div>`;
+ if(lineUncertain(d))body+=`<div class="notice">合说参与者待确认：${esc(d.note||'请在合说校对中核实。')}</div>`;
+ body+=sceneAnswer?mnemonic(d):`<div class="row" style="margin-top:14px;flex-wrap:wrap"><button id="scenePeek" class="button secondary">看我的台词</button><button id="sceneHint" class="button soft">给一点提示</button></div>${sceneHint?`<div class="notice">起句：${esc(d.text.slice(0,11))}……</div>`:''}`;
+ body+=`<div class="controls"><button id="sceneNo" class="button warn">不会 / 不熟</button><button id="sceneYes" class="button good">会了 · 谁接我的话？</button></div>${sceneAnswer?'<button id="sceneReady" class="button secondary full" style="margin-top:12px">看完了 · 判断谁接话</button>':''}`;
+ }else if(scenePhase==='speaker'){
+ body+=`<div class="answer"><span class="small-label">我刚说完 · ${esc(speakerLabel(d))}</span><p>${esc(d.text)}</p></div>`;
+ if(!samePart){body+=`<div class="notice">本部分结束，没有下一句接话题。</div><button id="sceneStep" class="button full" style="margin-top:12px">${next?'进入下一部分':'完成这一轮'}</button>`;}
+ else{
+ const options=new Map(play.roles.map(r=>['roles:'+r,castName(r)]));
+ sceneLines.filter(x=>x.part===d.part&&(lineRoles(x).length!==1||lineUncertain(x))).forEach(x=>options.set(speakerKey(x),speakerLabel(x)));
+ options.set(speakerKey(next),speakerLabel(next));
+ body+=`<h3>你说完这句，接下来是谁说？</h3><div class="row" style="flex-wrap:wrap">${[...options].map(([k,l],i)=>`<button class="button secondary speaker-option" data-choice="${esc(k)}" ${speakerChoice!==null?'disabled':''}>${esc(l)}</button>`).join('')}</div>`;
+ if(speakerChoice!==null){body+=`<div class="notice" role="status">${speakerChoice===speakerKey(next)?'答对了！':'这次接话的是：'+esc(speakerLabel(next))}${lineUncertain(next)?'。这里只按原稿称呼判断，参与者仍待核实。':''}</div>`;
+ body+=lineRoles(next).includes(role)?'<p class="tip">下一句你也参与，先保留台词，继续背下一句。</p>':`<div class="answer"><span class="small-label">接下来 · ${esc(speakerLabel(next))}</span><p>${esc(next.text)}</p>${stageTitle(next)}</div>`;
+ body+='<button id="sceneAfterChoice" class="button full" style="margin-top:12px">继续 →</button>';}
+ }
+ }else{
+ body+=`<div class="cue"><span class="cue-label">顺着剧情读 · ${esc(speakerLabel(d))}</span><div class="fulltext cue-text">${esc(d.text)}</div></div>${stageTitle(d)}<p class="fine">这一句不用背，也不用判断说话人。看看对方怎样回应，理解自己的下一句为什么出现。</p><button id="sceneStep" class="button full">${next&&lineRoles(next).includes(role)?'轮到我了 · 开始背词':next?'继续读下一句 →':'完成这一轮'}</button>`;
+ }
+ body+='<div class="navrow"><button class="quiet" id="sceneJump">跳到我的下一句 →</button><button class="quiet" id="sceneExit">返回接口背词</button></div>';
+ main.innerHTML=body;
+ bind('scenePeek',()=>{sceneAnswer=true;renderPractice();});bind('sceneHint',()=>{sceneHint=!sceneHint;renderPractice();});
+ bind('sceneNo',()=>{grades[role+':'+d.id]='no';writeStore(':grades',grades);sceneAnswer=true;renderPractice();});
+ bind('sceneYes',()=>{grades[role+':'+d.id]='yes';writeStore(':grades',grades);scenePhase='speaker';speakerChoice=null;renderPractice();});
+ bind('sceneReady',()=>{scenePhase='speaker';speakerChoice=null;renderPractice();});
+ main.querySelectorAll('.speaker-option').forEach(el=>el.onclick=()=>{speakerChoice=el.dataset.choice;renderPractice();});
+ bind('sceneAfterChoice',()=>sceneMove(scenePos+(lineRoles(next).includes(role)?1:2)));
+ bind('sceneStep',()=>sceneMove(scenePos+1));bind('sceneJump',sceneJump);bind('sceneExit',()=>makeQueue('all'));
+}
+
 function init(){
  if(!play){$('importView').classList.remove('hidden');$('importView').textContent='内置题库加载失败，请重新下载剧组共享版本。';return;}
  if(!play.roles.includes(role))role=play.roles[0];if(!allActs.includes(act))act='全剧';
@@ -16116,6 +16174,7 @@ function init(){
  $('actSelect').innerHTML=allActs.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');$('actSelect').value=act;
  $('roleSelect').onchange=ev=>{role=ev.target.value;persistSelector();};$('actSelect').onchange=ev=>{act=ev.target.value;persistSelector();};
  $('searchCue').oninput=ev=>{query=ev.target.value.trim();makeQueue(mode==='wrong'?'wrong':'all');};
+ $('combinedMode').onclick=startCombined;
  $('allMode').onclick=()=>makeQueue('all');$('wrongMode').onclick=()=>makeQueue('wrong');$('randomMode').onclick=()=>makeQueue('random');
  $('resetGrade').onclick=()=>{if(confirm(`清空${castName(role)}的全部成绩？`)){for(let k of Object.keys(grades)){if(k.startsWith(role+':'))delete grades[k];}writeStore(':grades',grades);makeQueue('all');}};
  $('exportGrade').onclick=()=>{let rows=['角色,原文接口号,部分,结果,上一句,台词'];for(let d of play.lines){let score=grades[role+':'+d.id];if(score)rows.push([role,d.id,d.part,score,d.prev?d.prev.speaker+'：'+d.prev.text:'',d.text].map(v=>'"'+String(v).replaceAll('"','""')+'"').join(','));}downloadText(`${roleNames[role]}_练习成绩.csv`,rows.join('\n'),'text/csv;charset=utf-8');};
@@ -16128,3 +16187,4 @@ init();
 </script>
 </body>
 </html>
+
