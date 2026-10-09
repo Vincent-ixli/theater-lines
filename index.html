@@ -25,7 +25,7 @@
 <aside class="panel"><h3>你的练习设置</h3>
 <div class="field"><label for="roleSelect">我演哪个角色？</label><select id="roleSelect"></select></div>
 <div class="field"><label for="actSelect">练哪一部分？</label><select id="actSelect"></select></div>
-<div class="gridstats"><div class="stat"><strong id="statTotal">0</strong><small>本场接口</small></div><div class="stat"><strong id="statYes">0</strong><small>已经会</small></div><div class="stat"><strong id="statNo">0</strong><small>仍不会</small></div></div>
+<div class="field"><label class="checkitem" style="display:flex;align-items:center;gap:8px"><input id="weakCueToggle" type="checkbox" style="width:auto;margin:0"/> 弱化接口 · 先不看上一句</label><div class="fine">先看更早的前情，卡住时再逐级展开提示。</div></div><div class="gridstats"><div class="stat"><strong id="statTotal">0</strong><small>本场接口</small></div><div class="stat"><strong id="statYes">0</strong><small>已经会</small></div><div class="stat"><strong id="statNo">0</strong><small>仍不会</small></div></div>
 <div class="progress"><i id="progressFill"></i></div>
 <div class="sectionbuttons"><button class="button" id="allMode">按顺序练</button><button class="button secondary" id="wrongMode">只练不会的</button><button class="button secondary" id="randomMode">随机抽查</button><button class="button secondary" id="combinedMode">综合练习 · 谁接我的话</button></div>
 <div class="sep"></div><div class="field"><label for="searchCue">检索台词 / 接口</label><input id="searchCue" placeholder="例如：皮带 / 爸爸" autocomplete="off"></div>
@@ -15998,6 +15998,7 @@ let answerVisible = false;
 let wantsNext = false;
 let hintVisible = false;
 let fullCueVisible = false;
+let weakCue = readStore(':weak-cue',false), cueHelp=0;
 let query = '';
 let reviewFilter = 'uncertain';
 const allActs = ['全剧',...play.parts];
@@ -16024,7 +16025,7 @@ function makeQueue(which='all'){
  if(which==='wrong') queue=matches.filter(d=>grades[role+':'+d.id]==='no').map(x=>x.id);
  else queue=matches.map(x=>x.id);
  if(which==='random')for(let i=queue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[queue[i],queue[j]]=[queue[j],queue[i]];}
- pos=0;answerVisible=false;wantsNext=false;hintVisible=false;fullCueVisible=false;
+ cueHelp=0;pos=0;answerVisible=false;wantsNext=false;hintVisible=false;fullCueVisible=false;
  practiceView='quiz'; renderPractice();
 }
 function renderNavButtons(){ $('combinedMode').className='button '+(combined?'':'secondary');for(let [id,m] of [['allMode','all'],['wrongMode','wrong'],['randomMode','random']])$(id).className='button '+(mode===m?'':'secondary');}
@@ -16044,25 +16045,26 @@ function renderPractice(){
  main.innerHTML=`<div class="eyebrow"><span>${esc(d.part)} · 你的第 ${numbered} 处 · 原文第 ${d.id} 号</span><span class="pill">${pos+1} / ${queue.length}</span></div>
  ${d.uncertain && lineUncertain(d)?`<div class="notice"><strong>合说待确认：</strong>${esc(d.note || '原文没有明确写出所有参与者。')}</div>`:''}
  ${stageTitle(d)}
- <div class="cue"><span class="cue-label">🎧 上一句 · 听到哪里接？</span><div class="cue-text">${detailLine(d.prev,'last')}</div></div>
+ ${weakCue?weakContext(d):`<div class="cue"><span class="cue-label">🎧 上一句 · 听到哪里接？</span><div class="cue-text">${detailLine(d.prev,'last')}</div></div>`}
  <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center"><span class="small-label">你要说的是哪句？先自己默背，别急着看答案。</span><span class="actname">【${esc(d.original_label)}】</span></div>
  ${answerVisible?`<div class="answer"><span class="small-label">✓ 你的完整台词 · ${esc(d.original_label)}</span><p>${esc(d.text)}</p><div class="nextcue"><span class="small-label">下一句 · 你的出口</span><div style="margin-top:5px">${detailLine(d.next,'first')}</div></div>${mnemonic(d)}${d.note?`<div class="notice">${esc(d.note)}</div>`:''}</div>`:''}
- ${!answerVisible?`<div class="row" style="margin-top:16px;flex-wrap:wrap"><button class="button secondary" id="peek" style="flex:1">👁 看答案和下一句</button><button class="button soft" id="hint" style="flex:1">💡 先给一点提示</button></div>${hintVisible?`<div class="notice">你的第一句是：<strong>${esc(d.text.slice(0,Math.min(d.text.length,11)))}</strong>……</div>`:''}`:''}
+ ${!answerVisible?(weakCue?weakHelp(d):`<div class="row" style="margin-top:16px;flex-wrap:wrap"><button class="button secondary" id="peek" style="flex:1">👁 看答案和下一句</button><button class="button soft" id="hint" style="flex:1">💡 先给一点提示</button></div>${hintVisible?`<div class="notice">你的第一句是：<strong>${esc(d.text.slice(0,Math.min(d.text.length,11)))}</strong>……</div>`:''}`):''}
  <div class="controls">${wantsNext?`<button class="button" id="continue">记完了 · 下一题 →</button>`:`<button class="button warn" id="noBtn">✕ 不会 / 不熟</button><button class="button good" id="yesBtn">✓ 会了</button>`}</div>
  <div class="navrow"><button id="backBtn" class="quiet" ${pos===0?'disabled':''}>← 上一题</button><span class="mini">${isNo?'⦿ 已在错题本':''} · 成绩只保存在你的浏览器</span><button id="skipBtn" class="quiet">先跳过 →</button></div>
  <div class="sep"></div><div class="row spread"><button id="browseSwitch" class="quiet">☷ 按顺序查看完整词单</button><button id="shareReminder" class="quiet">↗ 分享给演员</button></div>`;
+ bindWeakHelp(false);
  const bind=(id,cb)=>{let el=$(id);if(el)el.onclick=cb;};
  bind('yesBtn',()=>{grades[role+':'+d.id]='yes';writeStore(':grades',grades);advance();});
  bind('noBtn',()=>{grades[role+':'+d.id]='no';writeStore(':grades',grades);answerVisible=true;wantsNext=true;renderPractice();});
  bind('continue',advance);
  bind('peek',()=>{answerVisible=true;wantsNext=false;renderPractice();});
  bind('hint',()=>{hintVisible=!hintVisible;renderPractice();});
- bind('backBtn',()=>{pos=Math.max(0,pos-1);answerVisible=false;wantsNext=false;hintVisible=false;renderPractice();});
+ bind('backBtn',()=>{cueHelp=0;pos=Math.max(0,pos-1);answerVisible=false;wantsNext=false;hintVisible=false;renderPractice();});
  bind('skipBtn',advance);
  bind('browseSwitch',()=>{practiceView='browse';renderPractice();});
  bind('shareReminder',()=>showManage());
 }
-function advance(){pos++;answerVisible=false;wantsNext=false;hintVisible=false;renderPractice();}
+function advance(){cueHelp=0;pos++;answerVisible=false;wantsNext=false;hintVisible=false;renderPractice();}
 function renderBrowse(){
  let arr=byCurrentRole().filter(d=> !query || [d.text,d.prev?.text,d.next?.text,d.original_label].some(s=>(s||'').includes(query)));
  $('mainPractice').innerHTML=`<div class="row spread"><div><h2 style="margin:0 0 3px">完整接词清单</h2><div class="mini">${esc(castName(role))} · ${esc(act)} · ${arr.length} 处</div></div><button id="backQuiz" class="button secondary tiny">返回练习</button></div><div class="tabs"><button id="exportLines" class="button soft tiny">导出本角色词单（TXT）</button><button id="printLines" class="button secondary tiny">打印 / 存 PDF</button></div><div class="records">${arr.map((d,i)=>`<div class="record"><div><strong>${i+1}. 【${esc(d.original_label)}】</strong><span class="meta">${esc(d.part)} · 原文 #${d.id} ${lineUncertain(d)?'· ⚠ 合说待确认':''}</span></div><p><span class="small-label">接：</span>${esc(d.prev?(d.prev.speaker+'：'+ellipsisLast(d.prev.text,140)):(d.stage_before||'本部分开始'))}</p><p style="font-size:16px"><strong>我：</strong>${esc(d.text)}</p><p><span class="small-label">下：</span>${esc(d.next?(d.next.speaker+'：'+ellipsisFirst(d.next.text,140)):'本部分结束')}</p>${d.stage_before?`<p class="mini">动作：${esc(ellipsisFirst(d.stage_before,130))}</p>`:''}</div>`).join('')}</div>`;
@@ -16106,6 +16108,7 @@ function exportSite(){
  embedded.textContent=JSON.stringify(bundle).replace(/<\//g,'<\\/').replace(/\u2028/g,'\\u2028');
  // Export without any user's personal score / personalized interface state
  const views=['importView','workspace','reviewView','manageView'];for(let id of views){let e=doc.querySelector('#'+id);if(e){e.classList.add('hidden');if(id==='reviewView'||id==='manageView')e.innerHTML='';}}
+ let toggle=doc.querySelector('#weakCueToggle');if(toggle)toggle.removeAttribute('checked');
  let node=doc.querySelector('#mainPractice');if(node)node.innerHTML='';
  downloadText('index.html','<!doctype html>\n'+doc.outerHTML,'text/html;charset=utf-8');
 }
@@ -16114,10 +16117,11 @@ function persistSelector(){writeStore(':role',role);writeStore(':part',act);quer
 // 综合练习沿用原题库与个人背词成绩，仅考查自己台词后的说话人。
 let combined=false, sceneLines=[], scenePos=0, scenePhase='recall', sceneAnswer=false, sceneHint=false, speakerChoice=null;
 function startCombined(){
+ cueHelp=0;
  combined=true; sceneLines=play.lines.filter(takeAct); scenePos=sceneLines.findIndex(d=>lineRoles(d).includes(role));
  scenePhase='recall';sceneAnswer=false;sceneHint=false;speakerChoice=null;renderPractice();
 }
-function sceneMove(i){scenePos=i;sceneAnswer=false;sceneHint=false;speakerChoice=null;scenePhase=i>=0&&sceneLines[i]&&lineRoles(sceneLines[i]).includes(role)?'recall':'read';renderPractice();}
+function sceneMove(i){cueHelp=0;scenePos=i;sceneAnswer=false;sceneHint=false;speakerChoice=null;scenePhase=i>=0&&sceneLines[i]&&lineRoles(sceneLines[i]).includes(role)?'recall':'read';renderPractice();}
 function sceneJump(){const i=sceneLines.findIndex((d,j)=>j>scenePos&&lineRoles(d).includes(role));sceneMove(i<0?sceneLines.length:i);}
 function speakerKey(d){return lineUncertain(d)?'label:'+d.original_label:'roles:'+lineRoles(d).slice().sort().join('|');}
 function speakerLabel(d){return lineUncertain(d)?d.original_label+'（原稿称呼，分配待确认）':lineRoles(d).map(castName).join(' + ')||d.original_label;}
@@ -16135,11 +16139,11 @@ function renderCombined(){
  const next=sceneLines[scenePos+1],samePart=next&&next.part===d.part;
  const bind=(id,fn)=>{if($(id))$(id).onclick=fn;};
  let body=`<div class="eyebrow"><span>${esc(d.part)} · 原文 #${d.id}</span><span class="pill">${scenePhase==='recall'?'我的台词':scenePhase==='speaker'?'谁接话':'读剧情'}</span></div>`;
- body+=sceneContext(scenePos);
+ body+=(weakCue&&scenePhase==='recall')?weakContext(d):sceneContext(scenePos);
  if(scenePhase==='recall'){
  body+=stageTitle(d)+`<div class="cue"><span class="cue-label">轮到你 · ${esc(speakerLabel(d))}</span>${sceneAnswer?`<div class="fulltext cue-text">${esc(d.text)}</div>`:'<div class="tip">结合前情，先完整说出你的台词。</div>'}</div>`;
  if(lineUncertain(d))body+=`<div class="notice">合说参与者待确认：${esc(d.note||'请在合说校对中核实。')}</div>`;
- body+=sceneAnswer?mnemonic(d):`<div class="row" style="margin-top:14px;flex-wrap:wrap"><button id="scenePeek" class="button secondary">看我的台词</button><button id="sceneHint" class="button soft">给一点提示</button></div>${sceneHint?`<div class="notice">起句：${esc(d.text.slice(0,11))}……</div>`:''}`;
+ body+=sceneAnswer?mnemonic(d):(weakCue?weakHelp(d):`<div class="row" style="margin-top:14px;flex-wrap:wrap"><button id="scenePeek" class="button secondary">看我的台词</button><button id="sceneHint" class="button soft">给一点提示</button></div>${sceneHint?`<div class="notice">起句：${esc(d.text.slice(0,11))}……</div>`:''}`);
  body+=`<div class="controls"><button id="sceneNo" class="button warn">不会 / 不熟</button><button id="sceneYes" class="button good">会了 · 谁接我的话？</button></div>${sceneAnswer?'<button id="sceneReady" class="button secondary full" style="margin-top:12px">看完了 · 判断谁接话</button>':''}`;
  }else if(scenePhase==='speaker'){
  body+=`<div class="answer"><span class="small-label">我刚说完 · ${esc(speakerLabel(d))}</span><p>${esc(d.text)}</p></div>`;
@@ -16158,6 +16162,7 @@ function renderCombined(){
  }
  body+='<div class="navrow"><button class="quiet" id="sceneJump">跳到我的下一句 →</button><button class="quiet" id="sceneExit">返回接口背词</button></div>';
  main.innerHTML=body;
+ bindWeakHelp(true);
  bind('scenePeek',()=>{sceneAnswer=true;renderPractice();});bind('sceneHint',()=>{sceneHint=!sceneHint;renderPractice();});
  bind('sceneNo',()=>{grades[role+':'+d.id]='no';writeStore(':grades',grades);sceneAnswer=true;renderPractice();});
  bind('sceneYes',()=>{grades[role+':'+d.id]='yes';writeStore(':grades',grades);scenePhase='speaker';speakerChoice=null;renderPractice();});
@@ -16167,6 +16172,22 @@ function renderCombined(){
  bind('sceneStep',()=>sceneMove(scenePos+1));bind('sceneJump',sceneJump);bind('sceneExit',()=>makeQueue('all'));
 }
 
+
+function weakContext(d){
+ const index=play.lines.findIndex(x=>x.id===d.id);
+ const past=play.lines.slice(0,index).filter(x=>x.part===d.part),previous=past.at(-1),earlier=past.slice(0,-1);
+ return `<div class="memorize"><strong>前情 · 上一句先遮住</strong><p class="fine">先从对话的发展找回自己的台词。正式排练仍按对手的意思、动作和约定时机接话。</p>${earlier.length?earlier.slice(-3).map(contextCard).join(''):`<p class="fine">${previous?'这是本部分前几句，暂无更早前情；可查看上一句获得提示。':'本部分开场，没有上一句；结合舞台提示开始。'}</p>`}${earlier.length>3?`<details class="more"><summary>展开更早的前情</summary>${earlier.slice(0,-3).map(contextCard).join('')}</details>`:''}${previous?(cueHelp>0?`<div class="cue"><span class="cue-label">提示 1 · 紧邻你的上一句</span>${contextCard(previous)}</div>`:'<div class="notice">紧邻你的上一句已隐藏。先试着回忆，不必急着展开。</div>'):''}</div>`;
+}
+function weakHelp(d){
+ const i=play.lines.findIndex(x=>x.id===d.id),hasPrevious=i>0&&play.lines[i-1].part===d.part;
+ const label=cueHelp===0&&hasPrevious?'提示 1 · 显示上一句':cueHelp<2?'提示 2 · 我的起句':'提示 3 · 完整答案';
+ return `${cueHelp>=2?`<div class="notice">我的起句：<strong>${esc(d.text.replace(/^[（(].*?[)）]/,'').slice(0,11))}</strong>……</div>`:''}<button id="weakHelp" class="button secondary full" style="margin-top:14px">${label}</button>`;
+}
+function bindWeakHelp(inCombined){
+ if(!$('weakHelp'))return;
+ $('weakHelp').onclick=()=>{const d=inCombined?sceneLines[scenePos]:play.lines.find(x=>x.id===queue[pos]);const i=play.lines.findIndex(x=>x.id===d.id);if(cueHelp===0&&i>0&&play.lines[i-1].part===d.part)cueHelp=1;else if(cueHelp<2)cueHelp=2;else if(inCombined)sceneAnswer=true;else answerVisible=true;renderPractice();};
+}
+
 function init(){
  if(!play){$('importView').classList.remove('hidden');$('importView').textContent='内置题库加载失败，请重新下载剧组共享版本。';return;}
  if(!play.roles.includes(role))role=play.roles[0];if(!allActs.includes(act))act='全剧';
@@ -16174,6 +16195,8 @@ function init(){
  $('actSelect').innerHTML=allActs.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');$('actSelect').value=act;
  $('roleSelect').onchange=ev=>{role=ev.target.value;persistSelector();};$('actSelect').onchange=ev=>{act=ev.target.value;persistSelector();};
  $('searchCue').oninput=ev=>{query=ev.target.value.trim();makeQueue(mode==='wrong'?'wrong':'all');};
+ $('weakCueToggle').checked=weakCue;
+ $('weakCueToggle').onchange=ev=>{weakCue=ev.target.checked;writeStore(':weak-cue',weakCue);cueHelp=0;answerVisible=false;hintVisible=false;wantsNext=false;sceneAnswer=false;sceneHint=false;renderPractice();};
  $('combinedMode').onclick=startCombined;
  $('allMode').onclick=()=>makeQueue('all');$('wrongMode').onclick=()=>makeQueue('wrong');$('randomMode').onclick=()=>makeQueue('random');
  $('resetGrade').onclick=()=>{if(confirm(`清空${castName(role)}的全部成绩？`)){for(let k of Object.keys(grades)){if(k.startsWith(role+':'))delete grades[k];}writeStore(':grades',grades);makeQueue('all');}};
@@ -16187,4 +16210,5 @@ init();
 </script>
 </body>
 </html>
+
 
